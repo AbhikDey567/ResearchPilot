@@ -97,3 +97,48 @@ def write_report(
         raise RuntimeError("The report generator returned an empty response.")
 
     return answer
+
+
+def revise_report(
+    question: str,
+    answer: str,
+    findings: list[dict],
+    feedback: str,
+) -> str:
+    """Revise a report using Critic feedback and the available evidence."""
+
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is not configured.")
+
+    llm = ChatGroq(
+        model=GROQ_MODEL,
+        temperature=0.1,
+        max_retries=1,
+        timeout=60,
+    )
+
+    response = llm.invoke(
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(
+                content=(
+                    f"Research question:\n{question}\n\n"
+                    f"Available evidence findings:\n{findings}\n\n"
+                    f"Critic feedback:\n{feedback}\n\n"
+                    f"Current report:\n{answer}\n\n"
+                    "Revise the report to address the meaningful issues "
+                    "identified by the Critic. Use only the available evidence. "
+                    "Preserve valid content, correct citation references, and "
+                    "retain important caveats. Do not invent facts or sources. "
+                    "Return only the complete revised report in Markdown."
+                )
+            ),
+        ]
+    )
+
+    revised_answer = str(response.content).strip()
+
+    if not revised_answer:
+        raise RuntimeError("The report revision returned an empty response.")
+
+    return revised_answer
