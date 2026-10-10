@@ -1,4 +1,5 @@
-
+from app.agents.planner import plan_research
+from app.agents.reader import extract_evidence
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -7,7 +8,6 @@ from app.config import TAVILY_API_KEY, GROQ_API_KEY
 from app.schemas import ResearchRequest, ResearchResponse
 from app.services.web_search import search_web
 from app.services.report_writer import write_report
-
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +39,10 @@ def research(request: ResearchRequest):
         )
 
     try:
-        sources = search_web(question)
-        answer = write_report(question, sources)
+        queries = plan_research(question)
+        sources = search_web(queries)
+        findings = extract_evidence(question, sources)
+        answer = write_report(question, sources, findings)
 
         return ResearchResponse(
             question=question,

@@ -1,10 +1,10 @@
-
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.research import router as research_router
 
-
+logging.basicConfig(level=logging.INFO)
 app = FastAPI(
     title="ResearchPilot API",
     description="Web research API for ResearchPilot",

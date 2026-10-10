@@ -1,10 +1,8 @@
-
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config import GROQ_API_KEY, GROQ_MODEL
 from app.schemas import Source
-
 
 SYSTEM_PROMPT = """
 You are ResearchPilot, a professional research analyst.
@@ -44,15 +42,27 @@ Return only the finished report in Markdown.
 """
 
 
-def write_report(question: str, sources: list[Source]) -> str:
+def write_report(
+    question: str,
+    sources: list[Source],
+    findings: list[dict],
+) -> str:
+    """Generate a report using extracted evidence and its source references."""
+
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY is not configured.")
 
-    evidence = "\n\n".join(
-        f"Source {index}: {source.title}\n"
-        f"URL: {source.url}\n"
-        f"Content: {source.content}"
+    source_list = "\n\n".join(
+        f"[{index}] {source.title}\n" f"URL: {source.url}"
         for index, source in enumerate(sources, start=1)
+    )
+
+    evidence_notes = "\n\n".join(
+        f"Finding: {item['finding']}\n"
+        f"Source ID: [{item['source_id']}]\n"
+        f"Supporting evidence: {item['evidence']}\n"
+        f"Caveat: {item['caveat'] or 'None recorded'}"
+        for item in findings
     )
 
     llm = ChatGroq(
@@ -62,15 +72,24 @@ def write_report(question: str, sources: list[Source]) -> str:
         timeout=60,
     )
 
-    response = llm.invoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(
-            content=(
-                f"Research question:\n{question}\n\n"
-                f"Retrieved web evidence:\n{evidence}"
-            )
-        ),
-    ])
+    response = llm.invoke(
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(
+                content=(
+                    f"Research question:\n{question}\n\n"
+                    f"Extracted evidence findings:\n{evidence_notes}\n\n"
+                    f"Available source references:\n{source_list}\n\n"
+                    "Write a coherent research report using the findings. "
+                    "Cite claims with the original source numbers, such as [1]. "
+                    "Use only source numbers present in the available source "
+                    "references. Preserve important caveats and disagreements. "
+                    "Do not treat a finding as stronger than its supporting "
+                    "evidence allows."
+                )
+            ),
+        ]
+    )
 
     answer = str(response.content).strip()
 
