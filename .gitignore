@@ -15,6 +15,7 @@ frontend/dist/
 
 # Local databases
 *.db
+backend/researchpilot.db
 *.sqlite3
 
 # Editors and operating systems

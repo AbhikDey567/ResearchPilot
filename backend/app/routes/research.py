@@ -1,14 +1,15 @@
-from app.agents.planner import plan_research
-from app.agents.reader import extract_evidence
-from app.agents.critic import review_report
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
+from app.agents.workflow import run_research
 from app.config import TAVILY_API_KEY, GROQ_API_KEY
+from app.database import get_db
+from app.models import ResearchJob, Source as SourceModel, ResearchFinding
 from app.schemas import ResearchRequest, ResearchResponse
-from app.services.web_search import search_web
-from app.services.report_writer import write_report, revise_report
+from app.models import ResearchJob
+from app.schemas import ResearchHistoryItem, SavedResearchResponse
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +25,10 @@ def health_check():
 
 
 @router.post("/research", response_model=ResearchResponse)
-def research(request: ResearchRequest):
-    if not TAVILY_API_KEY or not GROQ_API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="Configure TAVILY_API_KEY and GROQ_API_KEY in backend/.env",
-        )
-
+def research(
+    request: ResearchRequest,
+    db: Session = Depends(get_db),
+):
     question = request.question.strip()
 
     if len(question) < 3:
@@ -39,34 +37,76 @@ def research(request: ResearchRequest):
             detail="Please enter a meaningful research question.",
         )
 
+    if not TAVILY_API_KEY or not GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Configure TAVILY_API_KEY and GROQ_API_KEY in backend/.env",
+        )
+
     try:
+        logger.info("Starting LangGraph research workflow.")
 
-        queries = plan_research(question)
-        sources = search_web(queries)
-        findings = extract_evidence(question, sources)
-        answer = write_report(question, sources, findings)
+        result = run_research(question)
 
-        # One quality review, followed by at most one revision.
+        # Extract the completed workflow result before persisting it.
+        answer = result["answer"]
+        sources = result["sources"]
+        findings = result.get("findings", [])
+        citation_audit = result.get("citation_audit", {})
+
+        # Save the report and related records atomically.
         try:
-            review = review_report(question, answer, findings)
+            job = ResearchJob(
+                question=question,
+                status="completed",
+                answer=answer,
+            )
 
-            if not review["approved"] and review["feedback"].strip():
-                logger.info("Critic requested a report revision.")
+            db.add(job)
+            db.flush()
 
-                try:
-                    answer = revise_report(
-                        question,
-                        answer,
-                        findings,
-                        review["feedback"],
+            for source in sources:
+                db.add(
+                    SourceModel(
+                        research_id=job.id,
+                        title=source.title,
+                        url=source.url,
+                        content=source.content,
                     )
-                except Exception:
-                    logger.exception(
-                        "Report revision failed; preserving the original draft."
-                    )
+                )
 
-        except Exception:
-            logger.exception("Critic review failed; preserving the original draft.")
+            for finding in findings:
+                db.add(
+                    ResearchFinding(
+                        research_id=job.id,
+                        source_id=finding.get("source_id"),
+                        finding=finding.get("finding", ""),
+                        evidence=finding.get("evidence", ""),
+                        caveat=finding.get("caveat", ""),
+                    )
+                )
+
+            db.commit()
+            logger.info("Saved research job %s to SQLite.", job.id)
+
+        except Exception as exc:
+            db.rollback()
+            logger.exception("Failed to persist research results.")
+            raise HTTPException(
+                status_code=500,
+                detail="The report was generated but could not be saved.",
+            ) from exc
+
+        logger.info(
+            "Research completed with %s sources.",
+            len(sources),
+        )
+
+        if citation_audit.get("invalid_citations"):
+            logger.warning(
+                "Citation audit found invalid references: %s",
+                citation_audit["invalid_citations"],
+            )
 
         return ResearchResponse(
             question=question,
@@ -77,8 +117,8 @@ def research(request: ResearchRequest):
     except HTTPException:
         raise
 
-    except Exception:
-        logger.exception("Research request failed")
+    except Exception as exc:
+        logger.exception("Research workflow failed.")
 
         raise HTTPException(
             status_code=502,
@@ -86,4 +126,66 @@ def research(request: ResearchRequest):
                 "Research could not be completed. Check the backend logs "
                 "and API provider status, then try again."
             ),
+        ) from exc
+
+
+@router.get("/research/history", response_model=list[ResearchHistoryItem])
+def get_research_history(db: Session = Depends(get_db)):
+    jobs = db.query(ResearchJob).order_by(ResearchJob.created_at.desc()).all()
+
+    return jobs
+
+
+@router.get(
+    "/research/history/{job_id}",
+    response_model=SavedResearchResponse,
+)
+def get_saved_research(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+    job = db.query(ResearchJob).filter(ResearchJob.id == job_id).first()
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Research report not found.",
         )
+
+    return {
+        "id": job.id,
+        "question": job.question,
+        "answer": job.answer or "",
+        "status": job.status,
+        "created_at": job.created_at,
+        "sources": [
+            {
+                "title": source.title,
+                "url": source.url,
+                "content": source.content,
+            }
+            for source in job.sources
+        ],
+    }
+
+
+@router.delete("/research/history/{job_id}")
+def delete_saved_research(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+    job = db.query(ResearchJob).filter(ResearchJob.id == job_id).first()
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Research report not found.",
+        )
+
+    db.delete(job)
+    db.commit()
+
+    return {
+        "message": "Research report deleted successfully.",
+        "id": job_id,
+    }

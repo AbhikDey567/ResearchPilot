@@ -1,7 +1,7 @@
 
+import { useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useState } from "react";
 import {
   ArrowRight,
   Atom,
@@ -11,127 +11,244 @@ import {
   FileText,
   Globe2,
   Layers3,
+  LoaderCircle,
+  Plus,
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Zap,
 } from "lucide-react";
 import "./index.css";
+
+const API_BASE = "http://127.0.0.1:8000/api";
 
 const suggestions = [
   {
     icon: Globe2,
     title: "Explore a technology",
-    prompt: "Compare the latest AI models, their capabilities, limitations, and costs.",
+    prompt:
+      "Compare the latest AI models, their capabilities, limitations, and costs.",
   },
   {
     icon: BookOpen,
     title: "Understand a complex topic",
-    prompt: "Explain how retrieval-augmented generation works and compare it with fine-tuning.",
+    prompt:
+      "Explain how retrieval-augmented generation works and compare it with fine-tuning.",
   },
   {
     icon: Layers3,
     title: "Compare different approaches",
-    prompt: "Compare React, Vue, and Svelte for building modern web applications.",
+    prompt:
+      "Compare React, Vue, and Svelte for building modern web applications.",
   },
 ];
 
 function App() {
-
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  const markdownComponents = {
-    p: ({ children }) => {
-      const renderCitation = (child, index) => {
-        if (typeof child !== "string") {
-          return child;
-        }
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [activeJobId, setActiveJobId] = useState(null);
+  const [openingJobId, setOpeningJobId] = useState(null);
+  const [deletingJobId, setDeletingJobId] = useState(null);
 
-        const parts = child.split(/(\[\d+\])/g);
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError("");
 
-        return parts.map((part, partIndex) => {
-          const match = part.match(/^\[(\d+)\]$/);
+    try {
+      const response = await fetch(`${API_BASE}/research/history`);
+      const data = await response.json();
 
-          if (!match) {
-            return part;
-          }
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not load research history.");
+      }
 
-          const sourceIndex = Number(match[1]) - 1;
-          const source = result?.sources?.[sourceIndex];
-
-          if (!source?.url) {
-            return part;
-          }
-
-          return (
-            <a
-              key={`${index}-${partIndex}`}
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-citation"
-              title={`Open source ${match[1]}: ${source.title}`}
-            >
-              [{match[1]}]
-            </a>
-          );
-        });
-      };
-
-      return (
-        <p>
-          {Array.isArray(children)
-            ? children.map(renderCitation)
-            : renderCitation(children, 0)}
-        </p>
+      setHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setHistoryError(
+        err.message || "Could not connect to the research history API."
       );
-    },
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const markdownComponents = {
+    p: ({ children }) => <p>{renderCitations(children, result?.sources)}</p>,
+    li: ({ children }) => <li>{renderCitations(children, result?.sources)}</li>,
+    td: ({ children }) => <td>{renderCitations(children, result?.sources)}</td>,
+    th: ({ children }) => <th>{renderCitations(children, result?.sources)}</th>,
+    blockquote: ({ children }) => (
+      <blockquote>{renderCitations(children, result?.sources)}</blockquote>
+    ),
+    h1: ({ children }) => <h1>{renderCitations(children, result?.sources)}</h1>,
+    h2: ({ children }) => <h2>{renderCitations(children, result?.sources)}</h2>,
+    h3: ({ children }) => <h3>{renderCitations(children, result?.sources)}</h3>,
   };
 
+  function renderCitations(children, sources) {
+    if (!Array.isArray(children)) {
+      children = [children];
+    }
+
+    return children.map((child, index) => {
+      if (typeof child !== "string") {
+        return child;
+      }
+
+      const parts = child.split(/(\[\d+\])/g);
+
+      return parts.map((part, partIndex) => {
+        const match = part.match(/^\[(\d+)\]$/);
+
+        if (!match) return part;
+
+        const source = sources?.[Number(match[1]) - 1];
+
+        if (!source?.url) return part;
+
+        return (
+          <a
+            key={`${index}-${partIndex}`}
+            href={source.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-citation"
+            title={`Open source ${match[1]}: ${source.title}`}
+          >
+            [{match[1]}]
+          </a>
+        );
+      });
+    });
+  }
 
   async function handleResearch(event) {
     event.preventDefault();
 
     const question = query.trim();
 
-    if (!question || loading) return;
+    if (question.length < 3 || loading) return;
 
     setLoading(true);
     setError("");
     setResult(null);
+    setActiveJobId(null);
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/research",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ question }),
-        }
-      );
+      const response = await fetch(`${API_BASE}/research`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.detail || "Research could not be completed."
-        );
+        throw new Error(data.detail || "Research could not be completed.");
       }
 
       setResult(data);
+      await loadHistory();
     } catch (err) {
       setError(
         err.message ||
-        "Could not connect to ResearchPilot. Check that the backend is running."
+          "Could not connect to ResearchPilot. Check that the backend is running."
       );
     } finally {
       setLoading(false);
     }
+  }
+
+  async function openSavedResearch(jobId) {
+    if (openingJobId !== null) return;
+
+    setOpeningJobId(jobId);
+    setError("");
+    setHistoryError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/research/history/${jobId}`
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not open this report.");
+      }
+
+      setResult({
+        question: data.question,
+        answer: data.answer,
+        sources: data.sources || [],
+      });
+      setQuery(data.question);
+      setActiveJobId(jobId);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      setHistoryError(err.message || "Could not open this report.");
+    } finally {
+      setOpeningJobId(null);
+    }
+  }
+
+  async function deleteSavedResearch(event, jobId) {
+    event.stopPropagation();
+
+    if (deletingJobId !== null) return;
+
+    const confirmed = window.confirm(
+      "Delete this saved research report and its associated data?"
+    );
+
+    if (!confirmed) return;
+
+    setDeletingJobId(jobId);
+    setHistoryError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/research/history/${jobId}`,
+        { method: "DELETE" }
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not delete this report.");
+      }
+
+      setHistory((previous) =>
+        previous.filter((item) => item.id !== jobId)
+      );
+
+      if (activeJobId === jobId) {
+        setResult(null);
+        setActiveJobId(null);
+        setQuery("");
+      }
+    } catch (err) {
+      setHistoryError(err.message || "Could not delete this report.");
+    } finally {
+      setDeletingJobId(null);
+    }
+  }
+
+  function startNewResearch() {
+    setQuery("");
+    setResult(null);
+    setError("");
+    setActiveJobId(null);
+    document.getElementById("research-input")?.focus();
   }
 
   function useSuggestion(prompt) {
@@ -139,7 +256,6 @@ function App() {
     setError("");
     document.getElementById("research-input")?.focus();
   }
-
 
   return (
     <div className="app-shell">
@@ -154,14 +270,8 @@ function App() {
           </span>
         </a>
 
-        <button
-          className="new-research"
-          onClick={() => {
-            setQuery("");
-            document.getElementById("research-input")?.focus();
-          }}
-        >
-          <Sparkles size={17} />
+        <button className="new-research" onClick={startNewResearch}>
+          <Plus size={17} />
           New research
           <span className="shortcut">⌘ K</span>
         </button>
@@ -169,40 +279,124 @@ function App() {
         <div className="sidebar-label">WORKSPACE</div>
 
         <nav className="sidebar-nav">
-          <a className="nav-item active" href="#research">
+          <button
+            className={`nav-item ${!activeJobId ? "active" : ""}`}
+            onClick={startNewResearch}
+            type="button"
+          >
             <Search size={17} />
             Research
-          </a>
-          <a className="nav-item" href="#sources">
+          </button>
+          <button
+            className="nav-item"
+            onClick={() =>
+              document.getElementById("sources")?.scrollIntoView({
+                behavior: "smooth",
+              })
+            }
+            type="button"
+          >
             <BookOpen size={17} />
             Sources
-          </a>
-          <a className="nav-item" href="#reports">
+          </button>
+          <button
+            className="nav-item"
+            onClick={() =>
+              document.getElementById("reports")?.scrollIntoView({
+                behavior: "smooth",
+              })
+            }
+            type="button"
+          >
             <FileText size={17} />
             Reports
-          </a>
+          </button>
         </nav>
 
-        <div className="sidebar-label history-label">
-          RECENT RESEARCH
-        </div>
+        <div className="sidebar-label history-label">RESEARCH HISTORY</div>
 
-        <div className="empty-history">
-          <Clock3 size={19} />
-          <p>Your research history will appear here.</p>
+        <div className="history-list">
+          {historyLoading ? (
+            <p className="history-message">
+              <LoaderCircle size={15} className="history-spinner" />
+              Loading history...
+            </p>
+          ) : historyError && history.length === 0 ? (
+            <p className="history-message">{historyError}</p>
+          ) : history.length === 0 ? (
+            <div className="empty-history">
+              <Clock3 size={19} />
+              <p>Your saved research will appear here.</p>
+            </div>
+          ) : (
+            history.map((item) => (
+              <div
+                className={`history-item ${
+                  activeJobId === item.id ? "active" : ""
+                }`}
+                key={item.id}
+              >
+                <button
+                  className="history-open"
+                  onClick={() => openSavedResearch(item.id)}
+                  disabled={openingJobId !== null}
+                  type="button"
+                  title={item.question}
+                >
+                  <FileText size={15} />
+                  <span>{item.question}</span>
+                  {openingJobId === item.id && (
+                    <LoaderCircle size={14} className="history-spinner" />
+                  )}
+                </button>
+
+                <button
+                  className="history-delete"
+                  onClick={(event) => deleteSavedResearch(event, item.id)}
+                  disabled={deletingJobId !== null}
+                  type="button"
+                  aria-label={`Delete report: ${item.question}`}
+                  title="Delete report"
+                >
+                  {deletingJobId === item.id ? (
+                    <LoaderCircle size={14} className="history-spinner" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                </button>
+              </div>
+            ))
+          )}
+
+          {!historyLoading && historyError && history.length > 0 && (
+            <p className="history-message">{historyError}</p>
+          )}
+
+          <button
+            className="history-refresh"
+            onClick={loadHistory}
+            disabled={historyLoading}
+            type="button"
+          >
+            <Clock3 size={14} />
+            Refresh history
+          </button>
         </div>
 
         <div className="sidebar-bottom">
           <div className="status-dot" />
           <span>Research engine</span>
-          <span className="status-badge">Setup</span>
+          <span className="status-badge">SQLite</span>
         </div>
       </aside>
 
       <main className="main-content" id="research">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <span>/</span> <strong>New research</strong>
+            Workspace <span>/</span>{" "}
+            <strong>
+              {activeJobId ? "Saved research" : "New research"}
+            </strong>
           </div>
 
           <button className="model-selector" type="button">
@@ -225,8 +419,8 @@ function App() {
           </h1>
 
           <p className="hero-description">
-            Explore complex topics, investigate reliable sources, and
-            turn scattered information into research you can actually use.
+            Explore complex topics, investigate reliable sources, and turn
+            scattered information into research you can actually use.
           </p>
 
           <form className="research-form" onSubmit={handleResearch}>
@@ -252,11 +446,10 @@ function App() {
                 Source-backed research
               </span>
 
-
               <button
                 className="research-button"
                 type="submit"
-                disabled={!query.trim() || loading}
+                disabled={query.trim().length < 3 || loading}
               >
                 {loading ? "Researching..." : "Start research"}
                 {loading ? (
@@ -265,56 +458,59 @@ function App() {
                   <ArrowRight size={16} />
                 )}
               </button>
-
             </div>
           </form>
 
-          <div className="suggestion-heading">
-            <span>NOT SURE WHERE TO START?</span>
-            <span>TRY AN EXAMPLE</span>
-          </div>
+          {!result && (
+            <>
+              <div className="suggestion-heading">
+                <span>NOT SURE WHERE TO START?</span>
+                <span>TRY AN EXAMPLE</span>
+              </div>
 
-          <div className="suggestion-grid">
-            {suggestions.map((item) => {
-              const Icon = item.icon;
+              <div className="suggestion-grid">
+                {suggestions.map((item) => {
+                  const Icon = item.icon;
 
-              return (
-                <button
-                  className="suggestion-card"
-                  key={item.title}
-                  onClick={() => useSuggestion(item.prompt)}
-                  type="button"
-                >
-                  <span className="suggestion-icon">
-                    <Icon size={19} />
-                  </span>
-                  <span className="suggestion-title">{item.title}</span>
-                  <span className="suggestion-description">
-                    {item.prompt}
-                  </span>
-                  <ArrowRight
-                    className="suggestion-arrow"
-                    size={16}
-                  />
-                </button>
-              );
-            })}
-          </div>
+                  return (
+                    <button
+                      className="suggestion-card"
+                      key={item.title}
+                      onClick={() => useSuggestion(item.prompt)}
+                      type="button"
+                    >
+                      <span className="suggestion-icon">
+                        <Icon size={19} />
+                      </span>
+                      <span className="suggestion-title">{item.title}</span>
+                      <span className="suggestion-description">
+                        {item.prompt}
+                      </span>
+                      <ArrowRight
+                        className="suggestion-arrow"
+                        size={16}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
 
-          <div className="capabilities">
-            <div className="capability">
-              <Globe2 size={17} />
-              <span>Web-based discovery</span>
-            </div>
-            <div className="capability">
-              <ShieldCheck size={17} />
-              <span>Traceable evidence</span>
-            </div>
-            <div className="capability">
-              <Zap size={17} />
-              <span>Structured reports</span>
-            </div>
-          </div>
+              <div className="capabilities">
+                <div className="capability">
+                  <Globe2 size={17} />
+                  <span>Web-based discovery</span>
+                </div>
+                <div className="capability">
+                  <ShieldCheck size={17} />
+                  <span>Traceable evidence</span>
+                </div>
+                <div className="capability">
+                  <Zap size={17} />
+                  <span>Structured reports</span>
+                </div>
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="result-error" role="alert">
@@ -334,13 +530,18 @@ function App() {
           )}
 
           {result && (
-            <section className="results-panel" aria-live="polite">
+            <section
+              className="results-panel"
+              id="reports"
+              aria-live="polite"
+            >
               <div className="results-heading">
                 <div>
                   <span className="results-eyebrow">
                     <Sparkles size={14} /> RESEARCH RESULTS
                   </span>
                   <h2>Your research report</h2>
+                  <p>{result.question}</p>
                 </div>
                 <span className="source-count">
                   {result.sources.length} sources
@@ -383,11 +584,13 @@ function App() {
               </div>
             </section>
           )}
-
         </section>
 
         <footer className="page-footer">
-          <span>RESEARCHPILOT <span className="footer-separator">/</span> EARLY BUILD</span>
+          <span>
+            RESEARCHPILOT <span className="footer-separator">/</span> EARLY
+            BUILD
+          </span>
           <span>Built for curious minds.</span>
         </footer>
       </main>

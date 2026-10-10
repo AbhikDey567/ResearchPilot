@@ -10,7 +10,7 @@ from app.schemas import Source
 
 logger = logging.getLogger(__name__)
 
-MAX_FINDINGS = 20
+MAX_FINDINGS = 8
 
 
 def parse_json_response(content):
@@ -70,9 +70,9 @@ def extract_evidence(
     llm = ChatGroq(
         model=GROQ_MODEL,
         temperature=0,
-        max_retries=2,
+        max_retries=0,
         timeout=60,
-        max_tokens=4000,
+        max_tokens=2000,
     )
 
     system_prompt = (
