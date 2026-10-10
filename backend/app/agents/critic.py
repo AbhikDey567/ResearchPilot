@@ -100,7 +100,6 @@ def review_report(
             lines = lines[:-1]
         raw = "\n".join(lines).strip()
 
-    # Parse the response, tolerating text around a JSON object.
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:

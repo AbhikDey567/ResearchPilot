@@ -26,11 +26,10 @@ def parse_json_response(content):
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
 
-    # First attempt: parse the entire response.
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        # Second attempt: extract a JSON array from surrounding text.
+        #extract a JSON array from surrounding text.
         start = raw.find("[")
         end = raw.rfind("]")
 
@@ -57,7 +56,6 @@ def extract_evidence(
     if not sources:
         raise RuntimeError("No sources available for evidence extraction.")
 
-    # Prepare numbered source evidence.
     evidence = "\n\n".join(
         f"SOURCE_ID: {index}\n"
         f"TITLE: {source.title}\n"
@@ -66,7 +64,6 @@ def extract_evidence(
         for index, source in enumerate(sources, start=1)
     )
 
-    # Normal Groq invocation: no JSON mode.
     llm = ChatGroq(
         model=GROQ_MODEL,
         temperature=0,
@@ -93,7 +90,6 @@ def extract_evidence(
 
     parsed = None
 
-    # Try a normal extraction first, then a smaller one if needed.
     for attempt, requested_findings in enumerate((12, 6), start=1):
 
         try:
@@ -155,7 +151,6 @@ def extract_evidence(
         supporting_evidence = item.get("evidence")
         caveat = item.get("caveat", "")
 
-        # Reject invalid or invented source IDs.
         if (
             not isinstance(source_id, int)
             or isinstance(source_id, bool)
@@ -163,11 +158,9 @@ def extract_evidence(
         ):
             continue
 
-        # Validate finding text.
         if not isinstance(finding, str) or not finding.strip():
             continue
 
-        # Validate supporting evidence.
         if not isinstance(supporting_evidence, str) or not supporting_evidence.strip():
             continue
 

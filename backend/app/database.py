@@ -26,8 +26,7 @@ class Base(DeclarativeBase):
 
 
 def create_tables() -> None:
-    # Import models so SQLAlchemy registers their table definitions.
-    from app import models  # noqa: F401
+    from app import models  
 
     Base.metadata.create_all(bind=engine)
 
