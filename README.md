@@ -43,55 +43,8 @@ ResearchPilot combines web search, webpage extraction, large language models, an
 
 ## 🏗️ Architecture
 
-```text
-                       User
-                        |
-                        v
-                React + Vite Frontend
-                        |
-                        v
-                  FastAPI REST API
-                        |
-                        v
-                LangGraph Workflow
-                        |
-                        v
-                 Research Question
-                        |
-                        v
-                  Tavily Web Search
-                        |
-                        v
-               Candidate Source URLs
-                        |
-                        v
-              Web Content Extraction
-              /          |           \
-         Requests    Trafilatura   Beautiful Soup
-              \          |           /
-               Optional browser fallbacks
-                 Crawl4AI / Playwright
-                        |
-                        v
-                  Evidence Reader
-                        |
-                        v
-                   Report Writer
-                        |
-                        v
-                  Citation Audit
-                        |
-                        v
-                 Generated Report
-                        |
-                        v
-                   SQLite Database
-                  /       |       \
-              Reports   Sources   Findings
-                        |
-                        v
-                Research History UI
-```
+<img width="1536" height="1024" alt="71387797-0129-4066-9d47-bc1e2f3acc62" src="https://github.com/user-attachments/assets/0433ea0b-abf9-4056-84f8-974f6dc68f65" />
+
 
 The research workflow discovers relevant sources, retrieves webpage content, extracts readable text, identifies evidence, generates a report, and checks citation references.
 
