@@ -125,7 +125,7 @@ Before running ResearchPilot, install:
 ### 1. Clone the repository
 
 ```bash
-git clone <YOUR_GITHUB_REPOSITORY_URL>
+git clone <(https://github.com/AbhikDey567/ResearchPilot)>
 cd ResearchPilot
 ```
 
