@@ -12,6 +12,10 @@ from app.schemas import Source
 
 logger = logging.getLogger(__name__)
 
+# Keep enough content for evidence extraction, while bounding the LLM context.
+MAX_SOURCES_FOR_REPORT = 6
+MAX_SOURCE_CHARS_FOR_LLM = 3_000
+
 
 class ResearchState(TypedDict, total=False):
     question: str
@@ -35,13 +39,17 @@ def search_node(state: ResearchState) -> dict:
     if not sources:
         raise RuntimeError("Web search returned no sources.")
 
-    # Limit the research context sent to later model calls.
-    sources = sources[:4]
-
+    # Keep full extracted source content instead of truncating every page to
+    # 1,000 characters. This was discarding useful sections and tables.
+    sources = sources[:MAX_SOURCES_FOR_REPORT]
     for source in sources:
-        source.content = source.content[:1000]
+        source.content = (source.content or "")[:MAX_SOURCE_CHARS_FOR_LLM]
 
-    logger.info("Using %s compact sources.", len(sources))
+    logger.info(
+        "Using %s sources; retained up to %s chars per source.",
+        len(sources),
+        MAX_SOURCE_CHARS_FOR_LLM,
+    )
     return {"sources": sources}
 
 
@@ -68,9 +76,7 @@ def writer_node(state: ResearchState) -> dict:
 
 def critic_node(state: ResearchState) -> dict:
     """Temporarily skip the optional Critic to conserve Groq quota."""
-
     logger.info("Skipping optional Critic to conserve Groq token quota.")
-
     return {
         "review": {
             "approved": True,
@@ -86,7 +92,6 @@ def citation_check_node(state: ResearchState) -> dict:
         state["answer"],
         state["sources"],
     )
-
     return {"citation_audit": audit}
 
 
