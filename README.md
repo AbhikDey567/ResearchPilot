@@ -90,6 +90,12 @@ ResearchPilot/
 
 The tree represents the intended project layout. Minor differences may exist in the local repository.
 
+## Application screenshots
+<img width="1900" height="925" alt="Screenshot 2026-10-11 143332" src="https://github.com/user-attachments/assets/9e3d563b-87a4-4573-a960-8af966c6acde" />
+
+<img width="1892" height="926" alt="Screenshot 2026-10-11 153439" src="https://github.com/user-attachments/assets/3e26f64e-482c-45cd-bd8b-0a0a76a5b757" />
+
+
 ## ⚙️ Prerequisites
 
 Before running ResearchPilot, install:
